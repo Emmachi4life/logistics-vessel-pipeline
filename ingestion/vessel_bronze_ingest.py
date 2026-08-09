@@ -1,5 +1,5 @@
 """
-Bronze layer ingestion. VesselAPI REST focuses onPort of Rotterdam vessel positions.
+Bronze layer ingestion. VesselAPI REST focuses on Port of Rotterdam vessel positions.
 
 Design principles:
 1. Preserve raw fidelity: thta is, store the full API response as received, no filtering.
@@ -7,8 +7,6 @@ Design principles:
 3. Schema resilience: storeing as JSON, not a rigid table. Then Schema enforcement happens in Silver Layer.
 
 """
-
-
  
 import os
 import json
@@ -19,10 +17,10 @@ from dotenv import load_dotenv
  
 load_dotenv()  # reads .env into environment variables
  
-# ---- CONFIG ----
+# CONFIG 
 API_KEY = os.environ.get("VESSELAPI_KEY")
-BRONZE_DIR = "../bronze/vessel_positions"   # relative path - keeps the project portable
-POLL_INTERVAL_SECONDS = 300                  # 5 minutes - adjust once you confirm rate limits
+BRONZE_DIR = "../bronze/vessel_positions"   # using relative path to keep the project portable
+POLL_INTERVAL_SECONDS = 300                  # pulling every 5 minutes interval
  
 # Port of Rotterdam bounding box (approx) 
 BBOX = {
@@ -34,7 +32,7 @@ BBOX = {
  
 BASE_URL = "https://api.vesselapi.com/v1/location/vessels/bounding-box"
 MAX_RETRIES = 3
-MAX_PAGES = 15   # should rarely be needed now that the time window is narrow
+MAX_PAGES = 15  
 PAGE_SIZE = 50    # max allowed per docs
  
  
@@ -54,7 +52,7 @@ def _build_time_window() -> dict:
 def _get_page(params: dict) -> dict | None:
     """Fetch a single page from the bounding-box endpoint, with 429/error retry logic.
  
-    Implements Retry-After-aware backoff per VesselAPI docs: on a 429, wait the
+    Implements Retry-After-aware backoff per VesselAPI docs: on a 429, wait for the
     duration the server tells us to (falling back to exponential backoff starting
     at 1s if no Retry-After header is present), then retry, up to MAX_RETRIES times.
     """
@@ -92,15 +90,10 @@ def fetch_vessels() -> dict | None:
     """Fetch ALL pages for the current bounding box and combine into one response.
  
     The bounding-box endpoint paginates (max 50 results per page per the docs).
-    A single poll can easily span multiple pages for a busy area like Rotterdam,
-    so we follow nextToken until it's exhausted or MAX_PAGES is hit, combining
+    since a single poll can easily span multiple pages for a place like Rotterdam,
+    following the nextToken until it's exhausted or MAX_PAGES is hit is ideal and combining
     every page's vessels into one list before returning.
  
-    IMPORTANT (per docs): a nextToken is only valid when reused with the SAME
-    time.from/time.to as the call that issued it. We don't set explicit time
-    bounds ourselves (the endpoint defaults to a 2h window), so every page in
-    a single fetch_vessels() call implicitly shares that same default window -
-    consistent with what the docs require for safe pagination.
     """
     all_vessels: list[dict] = []
     time_window = _build_time_window()
@@ -114,9 +107,8 @@ def fetch_vessels() -> dict | None:
         page = _get_page(params)
  
         if page is None:
-            # a page failed even after retries - stop rather than risk a gap
-            # silently passing as "complete" data
-            print(f"[ERROR] Page {page_count} failed - returning what we have so far.")
+            # a page failed even after retries, stop rather than risk a gap
+            print(f"[ERROR] Page {page_count} failed. Returning what we have so far.")
             break
  
         vessels = page.get("vessels", [])
@@ -126,14 +118,14 @@ def fetch_vessels() -> dict | None:
         if not next_token:
             break  # no more pages
  
-        # per docs: nextToken must be reused with the SAME time.from/time.to
+        # note: nextToken must be reused with the SAME time.from/time.to
         params = dict(BBOX)
         params.update(time_window)
         params["pagination.limit"] = PAGE_SIZE
         params["pagination.nextToken"] = next_token
  
     if page_count >= MAX_PAGES:
-        print(f"[WARNING] Hit MAX_PAGES cap ({MAX_PAGES}) - results may be INCOMPLETE. "
+        print(f"[WARNING] Hit MAX_PAGES cap ({MAX_PAGES}), The results may be INCOMPLETE. "
               f"There could be more vessels beyond what was collected this cycle.")
  
     print(f"[PAGINATION] collected {len(all_vessels)} vessels across {page_count} page(s)")
