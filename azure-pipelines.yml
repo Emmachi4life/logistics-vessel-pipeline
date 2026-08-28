@@ -1,0 +1,28 @@
+# CI pipeline for the logistics vessel pipeline project
+# Runs on every push to main: installs dependencies, checks syntax,
+# and lints the ingestion code
+
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.14'
+  displayName: 'Set up Python'
+
+- script: |
+    pip install -r requirements.txt
+    pip install pylint
+  displayName: 'Install dependencies'
+
+- script: |
+    python -m py_compile ingestion/vessel_bronze_ingest.py
+  displayName: 'Check for syntax errors'
+
+- script: |
+    pylint ingestion/vessel_bronze_ingest.py --exit-zero
+  displayName: 'Run linter (informational, does not fail build)'
